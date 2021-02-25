@@ -48,8 +48,8 @@ class Handle :
         mean /= len(best_genes)
 
         for i in range(len(self.new_genes)) :
-            if random.randint(0, 4) == 0 :
-                self.new_genes[i].setDistance(mean - 3, mean + 3)
+            if random.randint(0, 2) == 0 :
+                self.new_genes[i].setDistance(mean - mean / 3, mean + mean / 3)
 
             else :
                 self.new_genes[i].setDistance(mean, mean)

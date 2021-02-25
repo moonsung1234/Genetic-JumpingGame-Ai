@@ -1,22 +1,11 @@
 
-from threading import Thread
-from queue import Queue
 from objects import Character
 from objects import Obstacle
 from player import Gene
 from player import Handle
 import pygame as pg
+import asyncio
 import sys
-
-class ThreadHandler :
-    def __init__(self) :
-        self.is_stop = False
-
-    def stop(self) :
-        self.is_stop = True
-
-    def getState(self) :
-        return self.is_stop
 
 class JumpGame :
     def __init__(self, size, fps, screen_color, character_color, obstacle_color) :
@@ -34,16 +23,18 @@ class JumpGame :
         self.O_HEIGHT = 28
         self.O_SPEED = 4
 
-        self.GENE_AMOUNT = 3
-        self.GENE_BEST_AMOUNT = 1
+        self.GENE_AMOUNT = 4
+        self.GENE_BEST_AMOUNT = 2
         self.FIRST_RANGE = 0
         self.SECOND_RANGE = 100
 
         self.genes = []
-        self.ths = []
-        self.threads = []
+        self.crash_state = []
         self.generation = 1
         self.pg = pg
+
+        self.asyncio = asyncio
+        self.loop = self.asyncio.get_event_loop()
 
     def __initCharacter(self) :
         char = Character(self.pg, self.screen)
@@ -66,21 +57,18 @@ class JumpGame :
     def __checkJumping(self, char) :
         char.jump()
 
-    def __checkCrash(self, char, obs, th) :
-        while True :
-            for char_pos in char.getAllLocation() :
-                for obs_pos in obs.getAllLocation() :
-                    if char_pos == obs_pos :
-                        # print("crash")
-                        sys.exit(0)
+    def __checkCrash(self, char, obs) :
+        for char_pos in char.getAllLocation() :
+            for obs_pos in obs.getAllLocation() :
+                if char_pos == obs_pos :
+                    return True
 
-            if th.getState() :
-                # print("avoid")
-                sys.exit(0)
+        return False
+                    
 
     def __createNewGene(self) :
         for _ in range(self.GENE_AMOUNT) :
-            self.ths.append(ThreadHandler())
+            self.crash_state.append(False)
 
         return [
             Gene(self.__initCharacter(), self.FIRST_RANGE, self.SECOND_RANGE) for _ in range(self.GENE_AMOUNT)
@@ -92,36 +80,45 @@ class JumpGame :
         self.screen = self.pg.display.set_mode(self.SIZE)
         self.clock = self.pg.time.Clock()
 
+        # init gene
         if len(self.genes) == 0 :
             self.genes = self.__createNewGene()
 
         else :
             handle = Handle(self.genes, self.__createNewGene())
             self.genes = handle.mutate(self.GENE_BEST_AMOUNT)
-        
+
+        # init obstacle        
         obs1 = self.__initObstacle()
 
-        for i in range(self.GENE_AMOUNT) :
-            thread = Thread(target=self.__checkCrash, args=(
-                self.genes[i].char, obs1, self.ths[i]
-            ))
-            thread.daemon = True
-            thread.start()
-            self.threads.append(thread)
+        # set async function
+        async def control(i) :
+            if not self.crash_state[i] and self.__checkCrash(self.genes[i].char, obs1) :
+                self.crash_state[i] = True
+
+            if not self.crash_state[i] :
+                self.genes[i].addScore()
+                self.genes[i].jump(obs1)
+                self.__drawCharacter(self.genes[i].char)
+                self.__checkJumping(self.genes[i].char)
+                
+                return True
+
+            return False
+
+        async def main() :
+            for i in range(self.GENE_AMOUNT) :
+                self.asyncio.ensure_future(control(i))
 
         while True :
             self.screen.fill(self.SC) 
            
             for event in pg.event.get() :
                 if event.type == pg.QUIT :
+                    self.loop.close()
                     sys.exit(0)
 
-            for i in range(self.GENE_AMOUNT) :
-                if self.threads[i].is_alive() :
-                    self.genes[i].addScore()
-                    self.genes[i].jump(obs1)
-                    self.__drawCharacter(self.genes[i].char)
-                    self.__checkJumping(self.genes[i].char)
+            self.loop.run_until_complete(main())
 
             if not self.__drawObstacle(obs1) :
                 break
@@ -132,16 +129,12 @@ class JumpGame :
         gene_amount = 0
 
         for i in range(self.GENE_AMOUNT) :
-            if self.threads[i].is_alive() :
+            if not self.crash_state[i] :
                 gene_amount += 1
-
-            self.ths[i].stop()
-            self.threads[i].join()
 
         print("Generation ", self.generation, " : ", gene_amount)
 
-        self.ths = []
-        self.threads = []
+        self.crash_state = []
         self.generation += 1
         self.show()
 
