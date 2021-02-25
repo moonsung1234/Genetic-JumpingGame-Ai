@@ -23,7 +23,7 @@ class JumpGame :
         self.O_HEIGHT = 28
         self.O_SPEED = 4
 
-        self.GENE_AMOUNT = 4
+        self.GENE_AMOUNT = 5
         self.GENE_BEST_AMOUNT = 2
         self.FIRST_RANGE = 0
         self.SECOND_RANGE = 100
@@ -31,10 +31,9 @@ class JumpGame :
         self.genes = []
         self.crash_state = []
         self.generation = 1
-        self.pg = pg
 
+        self.pg = pg
         self.asyncio = asyncio
-        self.loop = self.asyncio.get_event_loop()
 
     def __initCharacter(self) :
         char = Character(self.pg, self.screen)
@@ -107,18 +106,21 @@ class JumpGame :
             return False
 
         async def main() :
+            wait_list = []
+
             for i in range(self.GENE_AMOUNT) :
-                self.asyncio.ensure_future(control(i))
+                wait_list.append(control(i))
+
+            await self.asyncio.wait(wait_list)
 
         while True :
             self.screen.fill(self.SC) 
            
             for event in pg.event.get() :
                 if event.type == pg.QUIT :
-                    self.loop.close()
                     sys.exit(0)
 
-            self.loop.run_until_complete(main())
+            self.asyncio.run(main())
 
             if not self.__drawObstacle(obs1) :
                 break
